@@ -2,15 +2,17 @@ package com.rayhank.tech_assesment.dto.auth;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 
 @Getter
 public class LoginRequest {
 
-    @NotBlank(message = "Email wajib diisi")
-    @Email(message = "Format email tidak valid")
+    @NotBlank(message = "The email field is required.")
+    @Email(message = "The email must be a valid email address.")
     private String email;
 
-    @NotBlank(message = "Password wajib diisi")
+    @NotBlank(message = "The password field is required.")
+    @Size(min = 5, message = "The password must be at least 5 characters.")
     private String password;
 }

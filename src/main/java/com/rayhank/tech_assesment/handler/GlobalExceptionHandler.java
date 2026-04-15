@@ -1,0 +1,44 @@
+package com.rayhank.tech_assesment.handler;
+
+import com.rayhank.tech_assesment.dto.MessageResponse;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    // Handles @Valid failures → 422 Unprocessable Entity
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+    public Map<String, Object> handleValidationErrors(MethodArgumentNotValidException ex) {
+        Map<String, List<String>> errors = new HashMap<>();
+
+        for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
+            errors
+                .computeIfAbsent(fieldError.getField(), k -> new ArrayList<>())
+                .add(fieldError.getDefaultMessage());
+        }
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("message", "Invalid field");
+        body.put("errors", errors);
+        return body;
+    }
+
+    // Handles wrong email/password from AuthenticationManager → 401
+    @ExceptionHandler(BadCredentialsException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public MessageResponse handleBadCredentials(BadCredentialsException ex) {
+        return new MessageResponse("Email or password incorrect");
+    }
+}
