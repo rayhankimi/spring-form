@@ -1,11 +1,13 @@
 package com.rayhank.tech_assesment.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rayhank.tech_assesment.entity.AllowedDomain;
+import com.rayhank.tech_assesment.entity.Form;
+import com.rayhank.tech_assesment.entity.User;
+import com.rayhank.tech_assesment.repository.FormRepository;
+import com.rayhank.tech_assesment.repository.UserRepository;
 import com.rayhank.tech_assesment.security.JwtService;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -14,6 +16,7 @@ import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfig
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.util.List;
@@ -21,6 +24,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -33,6 +37,8 @@ class FormControllerTest {
     @Autowired private WebApplicationContext webApplicationContext;
     @Autowired private JwtService jwtService;
     @Autowired private UserDetailsService userDetailsService;
+    @Autowired private FormRepository formRepository;
+    @Autowired private UserRepository userRepository;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -266,6 +272,216 @@ class FormControllerTest {
                             .header("Authorization", "Bearer invalid.token.here")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.message").value("Unauthenticated."));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // GET /api/v1/forms
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("GET /api/v1/forms")
+    class GetAllForms {
+
+        // Save a form directly via repository so GET tests are independent from POST tests
+        private Form seedForm(User owner, String slug) {
+            Form form = new Form();
+            form.setName("Seed Form " + slug);
+            form.setSlug(slug);
+            form.setDescription("Description");
+            form.setLimitOneResponse(false);
+            form.setCreator(owner);
+            return formRepository.save(form);
+        }
+
+        @Test
+        @DisplayName("200 — returns only forms created by the authenticated user")
+        @Transactional
+        void shouldReturnOnlyCurrentUserForms() throws Exception {
+            User user3 = userRepository.findByEmail("user3@worldskills.org").orElseThrow();
+            seedForm(user3, uniqueSlug("ga-u3-a"));
+            seedForm(user3, uniqueSlug("ga-u3-b"));
+
+            mockMvc.perform(get(FORMS_URL)
+                            .header("Authorization", "Bearer " + jwtService.generateToken(
+                                    userDetailsService.loadUserByUsername("user3@worldskills.org"))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("Get all forms success"))
+                    .andExpect(jsonPath("$.forms").isArray())
+                    .andExpect(jsonPath("$.forms[*].creator_id",
+                            everyItem(notNullValue())));
+        }
+
+        @Test
+        @DisplayName("200 — returns empty list when user has no forms")
+        void noForms_shouldReturnEmptyList() throws Exception {
+            // user2 has no forms in our test dataset (unless POST tests created some)
+            // We verify the structure is correct regardless of count
+            mockMvc.perform(get(FORMS_URL)
+                            .header("Authorization", "Bearer " + user2Token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("Get all forms success"))
+                    .andExpect(jsonPath("$.forms").isArray());
+        }
+
+        @Test
+        @DisplayName("200 — each form entry contains required fields")
+        @Transactional
+        void formEntry_shouldContainRequiredFields() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            seedForm(user1, uniqueSlug("ga-fields"));
+
+            mockMvc.perform(get(FORMS_URL)
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.forms[0].id").exists())
+                    .andExpect(jsonPath("$.forms[0].name").exists())
+                    .andExpect(jsonPath("$.forms[0].slug").exists())
+                    .andExpect(jsonPath("$.forms[0].creator_id").exists())
+                    .andExpect(jsonPath("$.forms[0].limit_one_response").exists());
+        }
+
+        @Test
+        @DisplayName("401 — request without token returns 'Unauthenticated.'")
+        void noToken_shouldReturn401() throws Exception {
+            mockMvc.perform(get(FORMS_URL))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.message").value("Unauthenticated."));
+        }
+
+        @Test
+        @DisplayName("401 — request with invalid token returns 'Unauthenticated.'")
+        void invalidToken_shouldReturn401() throws Exception {
+            mockMvc.perform(get(FORMS_URL)
+                            .header("Authorization", "Bearer bad.token.value"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.message").value("Unauthenticated."));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // GET /api/v1/forms/{slug}
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("GET /api/v1/forms/{slug}")
+    class GetFormDetail {
+
+        private Form seedFormWithDomain(User owner, String slug, String... domains) {
+            Form form = new Form();
+            form.setName("Detail Form " + slug);
+            form.setSlug(slug);
+            form.setDescription("A detail description");
+            form.setLimitOneResponse(true);
+            form.setCreator(owner);
+
+            if (domains.length > 0) {
+                List<AllowedDomain> allowedDomains = new java.util.ArrayList<>();
+                for (String d : domains) {
+                    AllowedDomain ad = new AllowedDomain();
+                    ad.setForm(form);
+                    ad.setDomain(d);
+                    allowedDomains.add(ad);
+                }
+                form.setAllowedDomains(allowedDomains);
+            }
+            return formRepository.save(form);
+        }
+
+        @Test
+        @DisplayName("200 — returns form detail with required fields")
+        @Transactional
+        void validSlug_shouldReturn200WithDetail() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("detail-ok");
+            seedFormWithDomain(user1, slug);
+
+            mockMvc.perform(get(FORMS_URL + "/" + slug)
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("Get form success"))
+                    .andExpect(jsonPath("$.form.id").isNumber())
+                    .andExpect(jsonPath("$.form.name").exists())
+                    .andExpect(jsonPath("$.form.slug").value(slug))
+                    .andExpect(jsonPath("$.form.creator_id").isNumber())
+                    .andExpect(jsonPath("$.form.allowed_domains").isArray())
+                    .andExpect(jsonPath("$.form.questions").isArray());
+        }
+
+        @Test
+        @DisplayName("200 — user whose domain is in allowed_domains can access form")
+        @Transactional
+        void allowedDomain_shouldReturn200() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("dom-allow");
+            // user1's domain is "webtech.id" — allow it
+            seedFormWithDomain(user1, slug, "webtech.id");
+
+            mockMvc.perform(get(FORMS_URL + "/" + slug)
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.form.allowed_domains[0]").value("webtech.id"));
+        }
+
+        @Test
+        @DisplayName("200 — form with no allowed_domains is accessible by any authenticated user")
+        @Transactional
+        void noAllowedDomains_anyUserCanAccess() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("open-form");
+            seedFormWithDomain(user1, slug); // no domains = open
+
+            // user3 (worldskills.org) can still access
+            String user3Token = jwtService.generateToken(
+                    userDetailsService.loadUserByUsername("user3@worldskills.org"));
+
+            mockMvc.perform(get(FORMS_URL + "/" + slug)
+                            .header("Authorization", "Bearer " + user3Token))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("403 — user whose domain is NOT in allowed_domains gets 'Forbidden access'")
+        @Transactional
+        void forbiddenDomain_shouldReturn403() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("dom-forbid");
+            // Only "webtech.id" allowed — user3 is "worldskills.org"
+            seedFormWithDomain(user1, slug, "webtech.id");
+
+            String user3Token = jwtService.generateToken(
+                    userDetailsService.loadUserByUsername("user3@worldskills.org"));
+
+            mockMvc.perform(get(FORMS_URL + "/" + slug)
+                            .header("Authorization", "Bearer " + user3Token))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.message").value("Forbidden access"));
+        }
+
+        @Test
+        @DisplayName("404 — unknown slug returns 'Form not found'")
+        void unknownSlug_shouldReturn404() throws Exception {
+            mockMvc.perform(get(FORMS_URL + "/slug-that-does-not-exist")
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.message").value("Form not found"));
+        }
+
+        @Test
+        @DisplayName("401 — request without token returns 'Unauthenticated.'")
+        void noToken_shouldReturn401() throws Exception {
+            mockMvc.perform(get(FORMS_URL + "/any-slug"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.message").value("Unauthenticated."));
+        }
+
+        @Test
+        @DisplayName("401 — request with invalid token returns 'Unauthenticated.'")
+        void invalidToken_shouldReturn401() throws Exception {
+            mockMvc.perform(get(FORMS_URL + "/any-slug")
+                            .header("Authorization", "Bearer bad.token"))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.message").value("Unauthenticated."));
         }

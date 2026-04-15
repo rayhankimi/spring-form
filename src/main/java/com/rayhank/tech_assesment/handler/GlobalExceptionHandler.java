@@ -1,6 +1,8 @@
 package com.rayhank.tech_assesment.handler;
 
 import com.rayhank.tech_assesment.dto.MessageResponse;
+import com.rayhank.tech_assesment.exception.ForbiddenAccessException;
+import com.rayhank.tech_assesment.exception.FormNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.FieldError;
@@ -40,5 +42,19 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public MessageResponse handleBadCredentials(BadCredentialsException ex) {
         return new MessageResponse("Email or password incorrect");
+    }
+
+    // Form slug not found → 404
+    @ExceptionHandler(FormNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public MessageResponse handleFormNotFound(FormNotFoundException ex) {
+        return new MessageResponse(ex.getMessage());
+    }
+
+    // User email domain not allowed to access the form → 403
+    @ExceptionHandler(ForbiddenAccessException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public MessageResponse handleForbiddenAccess(ForbiddenAccessException ex) {
+        return new MessageResponse(ex.getMessage());
     }
 }
