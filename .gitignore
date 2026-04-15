@@ -1,25 +1,45 @@
 HELP.md
+
+
 target/
-.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
-### STS ###
+.mvn/wrapper/maven-wrapper.jar
+
+
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+
+
+application-local.yml
+application-local.yaml
+
+
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+
 .apt_generated
 .classpath
 .factorypath
 .project
-.settings
+.settings/
 .springBeans
 .sts4-cache
 
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
 
-### NetBeans ###
+.vscode/
+
+
 /nbproject/private/
 /nbbuild/
 /dist/
@@ -29,5 +49,15 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
-### VS Code ###
-.vscode/
+
+.env
+*.env
+!.env.example
+
+
+docker/mysql/data/
+
+
+.DS_Store
+Thumbs.db
+desktop.ini
