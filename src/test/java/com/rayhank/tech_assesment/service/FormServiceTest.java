@@ -381,4 +381,228 @@ class FormServiceTest {
 
         assertThat(response.getForm().getQuestions()).isEmpty();
     }
+
+    // =========================================================================
+    // addQuestion
+    // =========================================================================
+
+    private AddQuestionRequest buildAddQuestionRequest(String name, String choiceType,
+                                                        List<String> choices, boolean isRequired) {
+        AddQuestionRequest req = new AddQuestionRequest();
+        ReflectionTestUtils.setField(req, "name", name);
+        ReflectionTestUtils.setField(req, "choiceType", choiceType);
+        ReflectionTestUtils.setField(req, "choices", choices);
+        ReflectionTestUtils.setField(req, "isRequired", isRequired);
+        return req;
+    }
+
+    private Question buildSavedQuestion(Long id, Form form, String name,
+                                         ChoiceType type, String choices, boolean required) {
+        Question q = new Question();
+        q.setId(id);
+        q.setForm(form);
+        q.setName(name);
+        q.setChoiceType(type);
+        q.setChoices(choices);
+        ReflectionTestUtils.setField(q, "isRequired", required);
+        return q;
+    }
+
+    @Test
+    @DisplayName("addQuestion returns AddQuestionResponse with message 'Add question success'")
+    void addQuestion_shouldReturnCorrectMessage() {
+        Question saved = buildSavedQuestion(1L, savedForm, "Q", ChoiceType.SHORT_ANSWER, null, false);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.save(any(Question.class))).thenReturn(saved);
+
+        AddQuestionRequest request = buildAddQuestionRequest("Q", "short answer", null, false);
+        AddQuestionResponse response = formService.addQuestion("test-form", request);
+
+        assertThat(response.getMessage()).isEqualTo("Add question success");
+    }
+
+    @Test
+    @DisplayName("addQuestion response contains correct question fields")
+    void addQuestion_shouldReturnCorrectQuestionFields() {
+        Question saved = buildSavedQuestion(7L, savedForm, "Favorite Stack",
+                ChoiceType.SHORT_ANSWER, null, true);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.save(any(Question.class))).thenReturn(saved);
+
+        AddQuestionRequest request = buildAddQuestionRequest("Favorite Stack", "short answer", null, true);
+        AddQuestionResponse response = formService.addQuestion("test-form", request);
+
+        QuestionDto dto = response.getQuestion();
+        assertThat(dto.getId()).isEqualTo(7L);
+        assertThat(dto.getName()).isEqualTo("Favorite Stack");
+        assertThat(dto.getChoiceType()).isEqualTo("short answer");
+        assertThat(dto.getFormId()).isEqualTo(10L);
+        assertThat(dto.isRequired()).isTrue();
+        assertThat(dto.getChoices()).isNull();
+    }
+
+    @Test
+    @DisplayName("addQuestion joins choices list to comma-separated string on the saved entity")
+    void addQuestion_shouldJoinChoicesToCommaSeparatedString() {
+        List<String> choices = List.of("React", "Vue", "Angular");
+        Question saved = buildSavedQuestion(2L, savedForm, "Framework",
+                ChoiceType.MULTIPLE_CHOICE, "React,Vue,Angular", false);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.save(any(Question.class))).thenReturn(saved);
+
+        AddQuestionRequest request = buildAddQuestionRequest("Framework", "multiple choice", choices, false);
+        formService.addQuestion("test-form", request);
+
+        ArgumentCaptor<Question> captor = ArgumentCaptor.forClass(Question.class);
+        verify(questionRepository).save(captor.capture());
+        assertThat(captor.getValue().getChoices()).isEqualTo("React,Vue,Angular");
+    }
+
+    @Test
+    @DisplayName("addQuestion response returns comma-separated string in choices field")
+    void addQuestion_shouldReturnCommaSeparatedChoicesInResponse() {
+        Question saved = buildSavedQuestion(3L, savedForm, "OS",
+                ChoiceType.DROPDOWN, "Windows,macOS,Linux", true);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.save(any(Question.class))).thenReturn(saved);
+
+        AddQuestionRequest request = buildAddQuestionRequest("OS", "dropdown",
+                List.of("Windows", "macOS", "Linux"), true);
+        AddQuestionResponse response = formService.addQuestion("test-form", request);
+
+        assertThat(response.getQuestion().getChoices()).isEqualTo("Windows,macOS,Linux");
+    }
+
+    @Test
+    @DisplayName("addQuestion with null choices stores null on entity")
+    void addQuestion_withNullChoices_shouldStoreNullOnEntity() {
+        Question saved = buildSavedQuestion(4L, savedForm, "Name", ChoiceType.SHORT_ANSWER, null, false);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.save(any(Question.class))).thenReturn(saved);
+
+        AddQuestionRequest request = buildAddQuestionRequest("Name", "short answer", null, false);
+        formService.addQuestion("test-form", request);
+
+        ArgumentCaptor<Question> captor = ArgumentCaptor.forClass(Question.class);
+        verify(questionRepository).save(captor.capture());
+        assertThat(captor.getValue().getChoices()).isNull();
+    }
+
+    @Test
+    @DisplayName("addQuestion with empty choices list stores null on entity")
+    void addQuestion_withEmptyChoices_shouldStoreNullOnEntity() {
+        Question saved = buildSavedQuestion(5L, savedForm, "Name", ChoiceType.SHORT_ANSWER, null, false);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.save(any(Question.class))).thenReturn(saved);
+
+        AddQuestionRequest request = buildAddQuestionRequest("Name", "short answer", List.of(), false);
+        formService.addQuestion("test-form", request);
+
+        ArgumentCaptor<Question> captor = ArgumentCaptor.forClass(Question.class);
+        verify(questionRepository).save(captor.capture());
+        assertThat(captor.getValue().getChoices()).isNull();
+    }
+
+    @Test
+    @DisplayName("addQuestion sets is_required=true correctly on the saved entity")
+    void addQuestion_withIsRequiredTrue_shouldSetTrueOnEntity() {
+        Question saved = buildSavedQuestion(6L, savedForm, "Q", ChoiceType.SHORT_ANSWER, null, true);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.save(any(Question.class))).thenReturn(saved);
+
+        AddQuestionRequest request = buildAddQuestionRequest("Q", "short answer", null, true);
+        formService.addQuestion("test-form", request);
+
+        ArgumentCaptor<Question> captor = ArgumentCaptor.forClass(Question.class);
+        verify(questionRepository).save(captor.capture());
+        assertThat(captor.getValue().isRequired()).isTrue();
+    }
+
+    @Test
+    @DisplayName("addQuestion sets form reference on the saved entity")
+    void addQuestion_shouldSetFormOnEntity() {
+        Question saved = buildSavedQuestion(8L, savedForm, "Q", ChoiceType.SHORT_ANSWER, null, false);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.save(any(Question.class))).thenReturn(saved);
+
+        AddQuestionRequest request = buildAddQuestionRequest("Q", "short answer", null, false);
+        formService.addQuestion("test-form", request);
+
+        ArgumentCaptor<Question> captor = ArgumentCaptor.forClass(Question.class);
+        verify(questionRepository).save(captor.capture());
+        assertThat(captor.getValue().getForm().getId()).isEqualTo(10L);
+    }
+
+    @Test
+    @DisplayName("addQuestion converts display name to correct ChoiceType enum on entity")
+    void addQuestion_shouldConvertChoiceTypeDisplayNameToEnum() {
+        Question saved = buildSavedQuestion(9L, savedForm, "Pick one",
+                ChoiceType.MULTIPLE_CHOICE, "A,B", false);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.save(any(Question.class))).thenReturn(saved);
+
+        AddQuestionRequest request = buildAddQuestionRequest("Pick one", "multiple choice",
+                List.of("A", "B"), false);
+        formService.addQuestion("test-form", request);
+
+        ArgumentCaptor<Question> captor = ArgumentCaptor.forClass(Question.class);
+        verify(questionRepository).save(captor.capture());
+        assertThat(captor.getValue().getChoiceType()).isEqualTo(ChoiceType.MULTIPLE_CHOICE);
+    }
+
+    @Test
+    @DisplayName("addQuestion serializes choice_type enum back to display name in response")
+    void addQuestion_shouldSerializeChoiceTypeToDisplayNameInResponse() {
+        Question saved = buildSavedQuestion(10L, savedForm, "Q",
+                ChoiceType.CHECKBOXES, "X,Y", false);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.save(any(Question.class))).thenReturn(saved);
+
+        AddQuestionRequest request = buildAddQuestionRequest("Q", "checkboxes",
+                List.of("X", "Y"), false);
+        AddQuestionResponse response = formService.addQuestion("test-form", request);
+
+        assertThat(response.getQuestion().getChoiceType()).isEqualTo("checkboxes");
+    }
+
+    @Test
+    @DisplayName("addQuestion with unknown slug throws FormNotFoundException")
+    void addQuestion_withUnknownSlug_shouldThrowFormNotFoundException() {
+        when(formRepository.findBySlug("no-such-form")).thenReturn(Optional.empty());
+
+        AddQuestionRequest request = buildAddQuestionRequest("Q", "short answer", null, false);
+
+        assertThatThrownBy(() -> formService.addQuestion("no-such-form", request))
+                .isInstanceOf(FormNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("addQuestion by non-creator throws ForbiddenAccessException")
+    void addQuestion_byNonCreator_shouldThrowForbiddenAccessException() {
+        // Override authentication: user2 is not the creator of savedForm
+        var auth = new UsernamePasswordAuthenticationToken("user2@other.com", null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        AddQuestionRequest request = buildAddQuestionRequest("Q", "short answer", null, false);
+
+        assertThatThrownBy(() -> formService.addQuestion("test-form", request))
+                .isInstanceOf(ForbiddenAccessException.class);
+    }
+
+    @Test
+    @DisplayName("addQuestion by non-creator does not save any question")
+    void addQuestion_byNonCreator_shouldNotSaveQuestion() {
+        var auth = new UsernamePasswordAuthenticationToken("user2@other.com", null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        AddQuestionRequest request = buildAddQuestionRequest("Q", "short answer", null, false);
+
+        assertThatThrownBy(() -> formService.addQuestion("test-form", request))
+                .isInstanceOf(ForbiddenAccessException.class);
+        verify(questionRepository, never()).save(any());
+    }
 }
