@@ -2,11 +2,15 @@ package com.rayhank.tech_assesment.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rayhank.tech_assesment.entity.AllowedDomain;
+import com.rayhank.tech_assesment.entity.ChoiceType;
 import com.rayhank.tech_assesment.entity.Form;
+import com.rayhank.tech_assesment.entity.Question;
 import com.rayhank.tech_assesment.entity.User;
 import com.rayhank.tech_assesment.repository.FormRepository;
+import com.rayhank.tech_assesment.repository.QuestionRepository;
 import com.rayhank.tech_assesment.repository.UserRepository;
 import com.rayhank.tech_assesment.security.JwtService;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,6 +43,8 @@ class FormControllerTest {
     @Autowired private UserDetailsService userDetailsService;
     @Autowired private FormRepository formRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private QuestionRepository questionRepository;
+    @Autowired private EntityManager entityManager;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -484,6 +490,105 @@ class FormControllerTest {
                             .header("Authorization", "Bearer bad.token"))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.message").value("Unauthenticated."));
+        }
+
+        @Test
+        @DisplayName("200 — questions array contains correct fields including choice_type and is_required")
+        @Transactional
+        void withQuestions_shouldReturnQuestionsWithAllFields() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("with-questions");
+            Form form = seedFormWithDomain(user1, slug);
+
+            Question q = new Question();
+            q.setForm(form);
+            q.setName("What is your favorite stack?");
+            q.setChoiceType(ChoiceType.SHORT_ANSWER);
+            q.setChoices(null);
+            org.springframework.test.util.ReflectionTestUtils.setField(q, "isRequired", true);
+            questionRepository.save(q);
+
+            entityManager.flush();
+            entityManager.clear();
+
+            mockMvc.perform(get(FORMS_URL + "/" + slug)
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.form.questions").isArray())
+                    .andExpect(jsonPath("$.form.questions", hasSize(1)))
+                    .andExpect(jsonPath("$.form.questions[0].id").isNumber())
+                    .andExpect(jsonPath("$.form.questions[0].name").value("What is your favorite stack?"))
+                    .andExpect(jsonPath("$.form.questions[0].choice_type").value("short answer"))
+                    .andExpect(jsonPath("$.form.questions[0].is_required").value(true))
+                    .andExpect(jsonPath("$.form.questions[0].form_id").isNumber());
+        }
+
+        @Test
+        @DisplayName("200 — multiple_choice question has choice_type serialized as 'multiple choice'")
+        @Transactional
+        void multipleChoiceQuestion_choiceTypeSerialization() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("mc-question");
+            Form form = seedFormWithDomain(user1, slug);
+
+            Question q = new Question();
+            q.setForm(form);
+            q.setName("Pick your OS");
+            q.setChoiceType(ChoiceType.MULTIPLE_CHOICE);
+            q.setChoices("Windows,macOS,Linux");
+            org.springframework.test.util.ReflectionTestUtils.setField(q, "isRequired", false);
+            questionRepository.save(q);
+
+            entityManager.flush();
+            entityManager.clear();
+
+            mockMvc.perform(get(FORMS_URL + "/" + slug)
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.form.questions[0].choice_type").value("multiple choice"))
+                    .andExpect(jsonPath("$.form.questions[0].choices").value("Windows,macOS,Linux"))
+                    .andExpect(jsonPath("$.form.questions[0].is_required").value(false));
+        }
+
+        @Test
+        @DisplayName("200 — form with no questions returns empty questions array")
+        @Transactional
+        void noQuestions_shouldReturnEmptyQuestionsArray() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("no-questions");
+            seedFormWithDomain(user1, slug);
+
+            mockMvc.perform(get(FORMS_URL + "/" + slug)
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.form.questions").isArray())
+                    .andExpect(jsonPath("$.form.questions", hasSize(0)));
+        }
+
+        @Test
+        @DisplayName("200 — multiple questions are all returned in questions array")
+        @Transactional
+        void multipleQuestions_shouldAllBeReturned() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("multi-q");
+            Form form = seedFormWithDomain(user1, slug);
+
+            for (int i = 1; i <= 3; i++) {
+                Question q = new Question();
+                q.setForm(form);
+                q.setName("Question " + i);
+                q.setChoiceType(ChoiceType.SHORT_ANSWER);
+                org.springframework.test.util.ReflectionTestUtils.setField(q, "isRequired", false);
+                questionRepository.save(q);
+            }
+
+            entityManager.flush();
+            entityManager.clear();
+
+            mockMvc.perform(get(FORMS_URL + "/" + slug)
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.form.questions", hasSize(3)));
         }
     }
 }

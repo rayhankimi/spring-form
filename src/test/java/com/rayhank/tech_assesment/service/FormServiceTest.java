@@ -1,15 +1,12 @@
 package com.rayhank.tech_assesment.service;
 
-import com.rayhank.tech_assesment.dto.form.CreateFormRequest;
-import com.rayhank.tech_assesment.dto.form.CreateFormResponse;
-import com.rayhank.tech_assesment.entity.Form;
-import com.rayhank.tech_assesment.entity.User;
+import com.rayhank.tech_assesment.dto.form.*;
+import com.rayhank.tech_assesment.entity.*;
+import com.rayhank.tech_assesment.exception.ForbiddenAccessException;
+import com.rayhank.tech_assesment.exception.FormNotFoundException;
 import com.rayhank.tech_assesment.repository.FormRepository;
 import com.rayhank.tech_assesment.repository.UserRepository;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -22,8 +19,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -40,7 +36,6 @@ class FormServiceTest {
 
     @BeforeEach
     void setUp() {
-        // Put a real Authentication into the context so SecurityContextHolder.getContext().getAuthentication().getName() works
         var auth = new UsernamePasswordAuthenticationToken("user1@webtech.id", null, List.of());
         SecurityContextHolder.getContext().setAuthentication(auth);
 
@@ -74,6 +69,26 @@ class FormServiceTest {
         ReflectionTestUtils.setField(req, "limitOneResponse", limitOne);
         return req;
     }
+
+    private AllowedDomain domain(Form form, String domainStr) {
+        AllowedDomain ad = new AllowedDomain();
+        ad.setForm(form);
+        ad.setDomain(domainStr);
+        return ad;
+    }
+
+    private Question question(Form form, String name, ChoiceType type, boolean required) {
+        Question q = new Question();
+        q.setForm(form);
+        q.setName(name);
+        q.setChoiceType(type);
+        ReflectionTestUtils.setField(q, "isRequired", required);
+        return q;
+    }
+
+    // =========================================================================
+    // createForm
+    // =========================================================================
 
     @Test
     @DisplayName("createForm returns CreateFormResponse with correct message and form data")
@@ -113,14 +128,13 @@ class FormServiceTest {
         when(formRepository.save(any(Form.class))).thenReturn(savedForm);
 
         CreateFormRequest request = buildRequest("F", "f", null, List.of("webtech.id", "worldskills.org"), false);
-
         formService.createForm(request);
 
         ArgumentCaptor<Form> captor = ArgumentCaptor.forClass(Form.class);
         verify(formRepository).save(captor.capture());
 
         List<String> domains = captor.getValue().getAllowedDomains()
-                .stream().map(d -> d.getDomain()).toList();
+                .stream().map(AllowedDomain::getDomain).toList();
 
         assertThat(domains).containsExactlyInAnyOrder("webtech.id", "worldskills.org");
     }
@@ -163,5 +177,206 @@ class FormServiceTest {
 
         assertThatThrownBy(() -> formService.createForm(request))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    // =========================================================================
+    // getAllForms
+    // =========================================================================
+
+    @Test
+    @DisplayName("getAllForms returns message 'Get all forms success'")
+    void getAllForms_shouldReturnCorrectMessage() {
+        when(userRepository.findByEmail("user1@webtech.id")).thenReturn(Optional.of(creator));
+        when(formRepository.findAllByCreator(creator)).thenReturn(List.of());
+
+        GetAllFormsResponse response = formService.getAllForms();
+
+        assertThat(response.getMessage()).isEqualTo("Get all forms success");
+    }
+
+    @Test
+    @DisplayName("getAllForms returns all forms belonging to the current user")
+    void getAllForms_shouldReturnAllFormsOfCurrentUser() {
+        Form form2 = new Form();
+        form2.setId(11L);
+        form2.setName("Form 2");
+        form2.setSlug("form-2");
+        form2.setCreator(creator);
+
+        when(userRepository.findByEmail("user1@webtech.id")).thenReturn(Optional.of(creator));
+        when(formRepository.findAllByCreator(creator)).thenReturn(List.of(savedForm, form2));
+
+        GetAllFormsResponse response = formService.getAllForms();
+
+        assertThat(response.getForms()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("getAllForms returns empty list when user has no forms")
+    void getAllForms_withNoForms_shouldReturnEmptyList() {
+        when(userRepository.findByEmail("user1@webtech.id")).thenReturn(Optional.of(creator));
+        when(formRepository.findAllByCreator(creator)).thenReturn(List.of());
+
+        GetAllFormsResponse response = formService.getAllForms();
+
+        assertThat(response.getForms()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("getAllForms maps all FormDto fields correctly")
+    void getAllForms_shouldMapAllFieldsCorrectly() {
+        savedForm.setLimitOneResponse(true);
+
+        when(userRepository.findByEmail("user1@webtech.id")).thenReturn(Optional.of(creator));
+        when(formRepository.findAllByCreator(creator)).thenReturn(List.of(savedForm));
+
+        GetAllFormsResponse response = formService.getAllForms();
+
+        FormDto dto = response.getForms().get(0);
+        assertThat(dto.getId()).isEqualTo(10L);
+        assertThat(dto.getName()).isEqualTo("Test Form");
+        assertThat(dto.getSlug()).isEqualTo("test-form");
+        assertThat(dto.getDescription()).isEqualTo("A description");
+        assertThat(dto.isLimitOneResponse()).isTrue();
+        assertThat(dto.getCreatorId()).isEqualTo(1L);
+    }
+
+    // =========================================================================
+    // getFormBySlug
+    // =========================================================================
+
+    @Test
+    @DisplayName("getFormBySlug with valid slug returns form detail with correct message")
+    void getFormBySlug_withValidSlug_shouldReturnFormDetail() {
+        savedForm.setAllowedDomains(List.of());
+        savedForm.setQuestions(List.of());
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        GetFormDetailResponse response = formService.getFormBySlug("test-form");
+
+        assertThat(response.getMessage()).isEqualTo("Get form success");
+        assertThat(response.getForm().getSlug()).isEqualTo("test-form");
+        assertThat(response.getForm().getName()).isEqualTo("Test Form");
+        assertThat(response.getForm().getCreatorId()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("getFormBySlug with no allowed_domains allows any authenticated user")
+    void getFormBySlug_withNoAllowedDomains_shouldAllowAnyUser() {
+        savedForm.setAllowedDomains(List.of());
+        savedForm.setQuestions(List.of());
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        assertThatCode(() -> formService.getFormBySlug("test-form")).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("getFormBySlug with matching allowed_domain allows access")
+    void getFormBySlug_withAllowedDomain_userDomainMatches_shouldReturn() {
+        savedForm.setAllowedDomains(List.of(domain(savedForm, "webtech.id")));
+        savedForm.setQuestions(List.of());
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        // user1@webtech.id's domain "webtech.id" matches — should succeed
+        assertThatCode(() -> formService.getFormBySlug("test-form")).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("getFormBySlug with domain check is case-insensitive")
+    void getFormBySlug_domainCheckIsCaseInsensitive() {
+        savedForm.setAllowedDomains(List.of(domain(savedForm, "WEBTECH.ID")));
+        savedForm.setQuestions(List.of());
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        // "WEBTECH.ID" should match "webtech.id" (case-insensitive)
+        assertThatCode(() -> formService.getFormBySlug("test-form")).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("getFormBySlug with forbidden domain throws ForbiddenAccessException")
+    void getFormBySlug_withForbiddenDomain_shouldThrowForbiddenAccessException() {
+        savedForm.setAllowedDomains(List.of(domain(savedForm, "other.org")));
+        savedForm.setQuestions(List.of());
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        assertThatThrownBy(() -> formService.getFormBySlug("test-form"))
+                .isInstanceOf(ForbiddenAccessException.class);
+    }
+
+    @Test
+    @DisplayName("getFormBySlug with unknown slug throws FormNotFoundException")
+    void getFormBySlug_withUnknownSlug_shouldThrowFormNotFoundException() {
+        when(formRepository.findBySlug("no-such-slug")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> formService.getFormBySlug("no-such-slug"))
+                .isInstanceOf(FormNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("getFormBySlug maps questions with choice_type as lowercase with spaces")
+    void getFormBySlug_shouldMapQuestionsWithChoiceTypeAsLowercase() {
+        Question q1 = question(savedForm, "Favorite stack", ChoiceType.SHORT_ANSWER, false);
+        Question q2 = question(savedForm, "Preferred OS", ChoiceType.MULTIPLE_CHOICE, true);
+        savedForm.setAllowedDomains(List.of());
+        savedForm.setQuestions(List.of(q1, q2));
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        GetFormDetailResponse response = formService.getFormBySlug("test-form");
+
+        List<QuestionDto> questions = response.getForm().getQuestions();
+        assertThat(questions).hasSize(2);
+        assertThat(questions.get(0).getChoiceType()).isEqualTo("short answer");
+        assertThat(questions.get(1).getChoiceType()).isEqualTo("multiple choice");
+        assertThat(questions.get(1).isRequired()).isTrue();
+        assertThat(questions.get(0).isRequired()).isFalse();
+    }
+
+    @Test
+    @DisplayName("getFormBySlug includes allowed_domains list in response")
+    void getFormBySlug_shouldIncludeAllowedDomainsInResponse() {
+        savedForm.setAllowedDomains(List.of(
+                domain(savedForm, "webtech.id"),
+                domain(savedForm, "worldskills.org")
+        ));
+        savedForm.setQuestions(List.of());
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        GetFormDetailResponse response = formService.getFormBySlug("test-form");
+
+        assertThat(response.getForm().getAllowedDomains())
+                .containsExactlyInAnyOrder("webtech.id", "worldskills.org");
+    }
+
+    @Test
+    @DisplayName("getFormBySlug with null allowed_domains returns empty list in response")
+    void getFormBySlug_withNullAllowedDomains_shouldReturnEmptyList() {
+        savedForm.setAllowedDomains(null);
+        savedForm.setQuestions(List.of());
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        GetFormDetailResponse response = formService.getFormBySlug("test-form");
+
+        assertThat(response.getForm().getAllowedDomains()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("getFormBySlug with null questions returns empty list in response")
+    void getFormBySlug_withNullQuestions_shouldReturnEmptyList() {
+        savedForm.setAllowedDomains(List.of());
+        savedForm.setQuestions(null);
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        GetFormDetailResponse response = formService.getFormBySlug("test-form");
+
+        assertThat(response.getForm().getQuestions()).isEmpty();
     }
 }
