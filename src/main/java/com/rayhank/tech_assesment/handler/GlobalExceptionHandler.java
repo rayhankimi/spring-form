@@ -1,6 +1,7 @@
 package com.rayhank.tech_assesment.handler;
 
 import com.rayhank.tech_assesment.dto.MessageResponse;
+import com.rayhank.tech_assesment.exception.*;
 import com.rayhank.tech_assesment.exception.ForbiddenAccessException;
 import com.rayhank.tech_assesment.exception.FormNotFoundException;
 import com.rayhank.tech_assesment.exception.QuestionNotFoundException;
@@ -63,6 +64,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(QuestionNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public MessageResponse handleQuestionNotFound(QuestionNotFoundException ex) {
+        return new MessageResponse(ex.getMessage());
+    }
+
+    // Service-level field validation (e.g. required answers) → 422 "Invalid field"
+    @ExceptionHandler(FormValidationException.class)
+    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+    public Map<String, Object> handleFormValidation(FormValidationException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("message", "Invalid field");
+        body.put("errors", ex.getErrors());
+        return body;
+    }
+
+    // Duplicate submission when limit_one_response is enabled → 422
+    @ExceptionHandler(AlreadySubmittedException.class)
+    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+    public MessageResponse handleAlreadySubmitted(AlreadySubmittedException ex) {
         return new MessageResponse(ex.getMessage());
     }
 

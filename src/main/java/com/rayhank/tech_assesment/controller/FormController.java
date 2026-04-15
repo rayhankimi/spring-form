@@ -2,7 +2,10 @@ package com.rayhank.tech_assesment.controller;
 
 import com.rayhank.tech_assesment.dto.MessageResponse;
 import com.rayhank.tech_assesment.dto.form.*;
+import com.rayhank.tech_assesment.dto.response.GetResponsesResponse;
+import com.rayhank.tech_assesment.dto.response.SubmitResponseRequest;
 import com.rayhank.tech_assesment.service.FormService;
+import com.rayhank.tech_assesment.service.ResponseService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -17,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 public class FormController {
 
     private final FormService formService;
+    private final ResponseService responseService;
 
     @PostMapping
     @Operation(summary = "Create a new form")
@@ -50,5 +54,19 @@ public class FormController {
             @PathVariable String slug,
             @PathVariable Long questionId) {
         return ResponseEntity.ok(formService.removeQuestion(slug, questionId));
+    }
+
+    @PostMapping("/{slug}/responses")
+    @Operation(summary = "Submit a response to a form")
+    public ResponseEntity<MessageResponse> submitResponse(
+            @PathVariable String slug,
+            @Valid @RequestBody SubmitResponseRequest request) {
+        return ResponseEntity.ok(responseService.submitResponse(slug, request));
+    }
+
+    @GetMapping("/{slug}/responses")
+    @Operation(summary = "Get all responses for a form (creator only)")
+    public ResponseEntity<GetResponsesResponse> getResponses(@PathVariable String slug) {
+        return ResponseEntity.ok(responseService.getResponses(slug));
     }
 }
