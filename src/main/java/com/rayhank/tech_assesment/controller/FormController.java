@@ -1,5 +1,6 @@
 package com.rayhank.tech_assesment.controller;
 
+import com.rayhank.tech_assesment.dto.MessageResponse;
 import com.rayhank.tech_assesment.dto.form.*;
 import com.rayhank.tech_assesment.service.FormService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,5 +42,13 @@ public class FormController {
             @PathVariable String slug,
             @Valid @RequestBody AddQuestionRequest request) {
         return ResponseEntity.ok(formService.addQuestion(slug, request));
+    }
+
+    @DeleteMapping("/{slug}/questions/{questionId}")
+    @Operation(summary = "Remove a question from a form owned by the authenticated user")
+    public ResponseEntity<MessageResponse> removeQuestion(
+            @PathVariable String slug,
+            @PathVariable Long questionId) {
+        return ResponseEntity.ok(formService.removeQuestion(slug, questionId));
     }
 }

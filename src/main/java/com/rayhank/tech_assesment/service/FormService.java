@@ -6,8 +6,10 @@ import com.rayhank.tech_assesment.entity.ChoiceType;
 import com.rayhank.tech_assesment.entity.Form;
 import com.rayhank.tech_assesment.entity.Question;
 import com.rayhank.tech_assesment.entity.User;
+import com.rayhank.tech_assesment.dto.MessageResponse;
 import com.rayhank.tech_assesment.exception.ForbiddenAccessException;
 import com.rayhank.tech_assesment.exception.FormNotFoundException;
+import com.rayhank.tech_assesment.exception.QuestionNotFoundException;
 import com.rayhank.tech_assesment.repository.FormRepository;
 import com.rayhank.tech_assesment.repository.QuestionRepository;
 import com.rayhank.tech_assesment.repository.UserRepository;
@@ -132,6 +134,24 @@ public class FormService {
                 .message("Add question success")
                 .question(toQuestionDto(saved))
                 .build();
+    }
+
+    @Transactional
+    public MessageResponse removeQuestion(String formSlug, Long questionId) {
+        Form form = formRepository.findBySlug(formSlug)
+                .orElseThrow(FormNotFoundException::new);
+
+        String currentUserEmail = getAuthenticatedEmail();
+        if (!form.getCreator().getEmail().equalsIgnoreCase(currentUserEmail)) {
+            throw new ForbiddenAccessException();
+        }
+
+        Question question = questionRepository.findByIdAndForm(questionId, form)
+                .orElseThrow(QuestionNotFoundException::new);
+
+        questionRepository.delete(question);
+
+        return new MessageResponse("Remove question success");
     }
 
     // Throws ForbiddenAccessException if the user's email domain is not in allowed_domains.

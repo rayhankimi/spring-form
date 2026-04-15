@@ -2,8 +2,10 @@ package com.rayhank.tech_assesment.service;
 
 import com.rayhank.tech_assesment.dto.form.*;
 import com.rayhank.tech_assesment.entity.*;
+import com.rayhank.tech_assesment.dto.MessageResponse;
 import com.rayhank.tech_assesment.exception.ForbiddenAccessException;
 import com.rayhank.tech_assesment.exception.FormNotFoundException;
+import com.rayhank.tech_assesment.exception.QuestionNotFoundException;
 import com.rayhank.tech_assesment.repository.FormRepository;
 import com.rayhank.tech_assesment.repository.QuestionRepository;
 import com.rayhank.tech_assesment.repository.UserRepository;
@@ -604,5 +606,108 @@ class FormServiceTest {
         assertThatThrownBy(() -> formService.addQuestion("test-form", request))
                 .isInstanceOf(ForbiddenAccessException.class);
         verify(questionRepository, never()).save(any());
+    }
+
+    // =========================================================================
+    // removeQuestion
+    // =========================================================================
+
+    private Question existingQuestion(Long id, Form form) {
+        Question q = new Question();
+        q.setId(id);
+        q.setForm(form);
+        q.setName("Existing Question");
+        q.setChoiceType(ChoiceType.SHORT_ANSWER);
+        ReflectionTestUtils.setField(q, "isRequired", false);
+        return q;
+    }
+
+    @Test
+    @DisplayName("removeQuestion returns message 'Remove question success'")
+    void removeQuestion_shouldReturnSuccessMessage() {
+        Question q = existingQuestion(5L, savedForm);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.findByIdAndForm(5L, savedForm)).thenReturn(Optional.of(q));
+
+        MessageResponse response = formService.removeQuestion("test-form", 5L);
+
+        assertThat(response.getMessage()).isEqualTo("Remove question success");
+    }
+
+    @Test
+    @DisplayName("removeQuestion calls questionRepository.delete with the correct question")
+    void removeQuestion_shouldDeleteTheQuestion() {
+        Question q = existingQuestion(5L, savedForm);
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.findByIdAndForm(5L, savedForm)).thenReturn(Optional.of(q));
+
+        formService.removeQuestion("test-form", 5L);
+
+        verify(questionRepository).delete(q);
+    }
+
+    @Test
+    @DisplayName("removeQuestion with unknown form slug throws FormNotFoundException")
+    void removeQuestion_withUnknownSlug_shouldThrowFormNotFoundException() {
+        when(formRepository.findBySlug("no-form")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> formService.removeQuestion("no-form", 1L))
+                .isInstanceOf(FormNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("removeQuestion with unknown question id throws QuestionNotFoundException")
+    void removeQuestion_withUnknownQuestionId_shouldThrowQuestionNotFoundException() {
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.findByIdAndForm(99L, savedForm)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> formService.removeQuestion("test-form", 99L))
+                .isInstanceOf(QuestionNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("removeQuestion where question belongs to a different form throws QuestionNotFoundException")
+    void removeQuestion_questionFromDifferentForm_shouldThrowQuestionNotFoundException() {
+        // question id 5 does not belong to savedForm — findByIdAndForm returns empty
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+        when(questionRepository.findByIdAndForm(5L, savedForm)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> formService.removeQuestion("test-form", 5L))
+                .isInstanceOf(QuestionNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("removeQuestion by non-creator throws ForbiddenAccessException")
+    void removeQuestion_byNonCreator_shouldThrowForbiddenAccessException() {
+        var auth = new UsernamePasswordAuthenticationToken("user2@other.com", null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        assertThatThrownBy(() -> formService.removeQuestion("test-form", 5L))
+                .isInstanceOf(ForbiddenAccessException.class);
+    }
+
+    @Test
+    @DisplayName("removeQuestion by non-creator does not delete any question")
+    void removeQuestion_byNonCreator_shouldNotDeleteQuestion() {
+        var auth = new UsernamePasswordAuthenticationToken("user2@other.com", null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        when(formRepository.findBySlug("test-form")).thenReturn(Optional.of(savedForm));
+
+        assertThatThrownBy(() -> formService.removeQuestion("test-form", 5L))
+                .isInstanceOf(ForbiddenAccessException.class);
+        verify(questionRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("removeQuestion with unknown form does not attempt question lookup")
+    void removeQuestion_withUnknownForm_shouldNotQueryQuestion() {
+        when(formRepository.findBySlug("no-form")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> formService.removeQuestion("no-form", 1L))
+                .isInstanceOf(FormNotFoundException.class);
+        verify(questionRepository, never()).findByIdAndForm(any(), any());
     }
 }

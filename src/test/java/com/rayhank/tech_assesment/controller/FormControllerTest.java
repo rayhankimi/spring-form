@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -1015,6 +1016,154 @@ class FormControllerTest {
                             .header("Authorization", "Bearer invalid.token.here")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.message").value("Unauthenticated."));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // DELETE /api/v1/forms/{slug}/questions/{questionId}
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("DELETE /api/v1/forms/{slug}/questions/{questionId}")
+    class RemoveQuestion {
+
+        private Form seedForm(User owner, String slug) {
+            Form form = new Form();
+            form.setName("Form " + slug);
+            form.setSlug(slug);
+            form.setLimitOneResponse(false);
+            form.setCreator(owner);
+            return formRepository.save(form);
+        }
+
+        private Question seedQuestion(Form form, String name) {
+            Question q = new Question();
+            q.setForm(form);
+            q.setName(name);
+            q.setChoiceType(ChoiceType.SHORT_ANSWER);
+            org.springframework.test.util.ReflectionTestUtils.setField(q, "isRequired", false);
+            return questionRepository.save(q);
+        }
+
+        // --- 200 Success ---
+
+        @Test
+        @DisplayName("200 — valid delete returns 'Remove question success'")
+        @Transactional
+        void validRequest_shouldReturn200WithSuccessMessage() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("rq-ok");
+            Form form = seedForm(user1, slug);
+            Question question = seedQuestion(form, "What is your name?");
+
+            mockMvc.perform(delete(FORMS_URL + "/" + slug + "/questions/" + question.getId())
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("Remove question success"));
+        }
+
+        @Test
+        @DisplayName("200 — question no longer exists after deletion")
+        @Transactional
+        void afterDeletion_questionShouldNotExist() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("rq-gone");
+            Form form = seedForm(user1, slug);
+            Question question = seedQuestion(form, "Delete me");
+            Long questionId = question.getId();
+
+            entityManager.flush();
+            entityManager.clear();
+
+            mockMvc.perform(delete(FORMS_URL + "/" + slug + "/questions/" + questionId)
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isOk());
+
+            org.assertj.core.api.Assertions.assertThat(
+                    questionRepository.findById(questionId)).isEmpty();
+        }
+
+        // --- 404 Form Not Found ---
+
+        @Test
+        @DisplayName("404 — unknown form slug returns 'Form not found'")
+        void unknownFormSlug_shouldReturn404() throws Exception {
+            mockMvc.perform(delete(FORMS_URL + "/slug-does-not-exist/questions/1")
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.message").value("Form not found"));
+        }
+
+        // --- 404 Question Not Found ---
+
+        @Test
+        @DisplayName("404 — unknown question id returns 'Question not found'")
+        @Transactional
+        void unknownQuestionId_shouldReturn404() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("rq-noquestion");
+            seedForm(user1, slug);
+
+            mockMvc.perform(delete(FORMS_URL + "/" + slug + "/questions/99999")
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.message").value("Question not found"));
+        }
+
+        @Test
+        @DisplayName("404 — question belonging to a different form returns 'Question not found'")
+        @Transactional
+        void questionFromDifferentForm_shouldReturn404() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+
+            // form-a owns the question; form-b is the one we target in the URL
+            String slugA = uniqueSlug("rq-form-a");
+            String slugB = uniqueSlug("rq-form-b");
+            Form formA = seedForm(user1, slugA);
+            seedForm(user1, slugB);
+            Question questionOnA = seedQuestion(formA, "Belongs to form-a");
+
+            mockMvc.perform(delete(FORMS_URL + "/" + slugB + "/questions/" + questionOnA.getId())
+                            .header("Authorization", "Bearer " + user1Token))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.message").value("Question not found"));
+        }
+
+        // --- 403 Forbidden ---
+
+        @Test
+        @DisplayName("403 — user deleting question from another user's form returns 'Forbidden access'")
+        @Transactional
+        void anotherUserForm_shouldReturn403() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("rq-forbidden");
+            Form form = seedForm(user1, slug);
+            Question question = seedQuestion(form, "user1's question");
+
+            // user2 tries to delete a question from user1's form
+            mockMvc.perform(delete(FORMS_URL + "/" + slug + "/questions/" + question.getId())
+                            .header("Authorization", "Bearer " + user2Token))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.message").value("Forbidden access"));
+        }
+
+        // --- 401 Unauthenticated ---
+
+        @Test
+        @DisplayName("401 — request without token returns 'Unauthenticated.'")
+        void noToken_shouldReturn401() throws Exception {
+            mockMvc.perform(delete(FORMS_URL + "/any-slug/questions/1"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.message").value("Unauthenticated."));
+        }
+
+        @Test
+        @DisplayName("401 — request with invalid token returns 'Unauthenticated.'")
+        void invalidToken_shouldReturn401() throws Exception {
+            mockMvc.perform(delete(FORMS_URL + "/any-slug/questions/1")
+                            .header("Authorization", "Bearer invalid.token.here"))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.message").value("Unauthenticated."));
         }

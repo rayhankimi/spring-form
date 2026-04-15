@@ -3,6 +3,7 @@ package com.rayhank.tech_assesment.handler;
 import com.rayhank.tech_assesment.dto.MessageResponse;
 import com.rayhank.tech_assesment.exception.ForbiddenAccessException;
 import com.rayhank.tech_assesment.exception.FormNotFoundException;
+import com.rayhank.tech_assesment.exception.QuestionNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.FieldError;
@@ -55,6 +56,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(FormNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public MessageResponse handleFormNotFound(FormNotFoundException ex) {
+        return new MessageResponse(ex.getMessage());
+    }
+
+    // Question id not found (or not belonging to the form) → 404
+    @ExceptionHandler(QuestionNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public MessageResponse handleQuestionNotFound(QuestionNotFoundException ex) {
         return new MessageResponse(ex.getMessage());
     }
 
