@@ -2,12 +2,14 @@ package com.rayhank.tech_assesment.service;
 
 import com.rayhank.tech_assesment.dto.form.*;
 import com.rayhank.tech_assesment.entity.AllowedDomain;
+import com.rayhank.tech_assesment.entity.ChoiceType;
 import com.rayhank.tech_assesment.entity.Form;
 import com.rayhank.tech_assesment.entity.Question;
 import com.rayhank.tech_assesment.entity.User;
 import com.rayhank.tech_assesment.exception.ForbiddenAccessException;
 import com.rayhank.tech_assesment.exception.FormNotFoundException;
 import com.rayhank.tech_assesment.repository.FormRepository;
+import com.rayhank.tech_assesment.repository.QuestionRepository;
 import com.rayhank.tech_assesment.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -23,6 +25,7 @@ public class FormService {
 
     private final FormRepository formRepository;
     private final UserRepository userRepository;
+    private final QuestionRepository questionRepository;
 
     @Transactional
     public CreateFormResponse createForm(CreateFormRequest request) {
@@ -99,6 +102,35 @@ public class FormService {
         return GetFormDetailResponse.builder()
                 .message("Get form success")
                 .form(detail)
+                .build();
+    }
+
+    @Transactional
+    public AddQuestionResponse addQuestion(String formSlug, AddQuestionRequest request) {
+        Form form = formRepository.findBySlug(formSlug)
+                .orElseThrow(FormNotFoundException::new);
+
+        String currentUserEmail = getAuthenticatedEmail();
+        if (!form.getCreator().getEmail().equalsIgnoreCase(currentUserEmail)) {
+            throw new ForbiddenAccessException();
+        }
+
+        String choices = (request.getChoices() != null && !request.getChoices().isEmpty())
+                ? String.join(",", request.getChoices())
+                : null;
+
+        Question question = new Question();
+        question.setForm(form);
+        question.setName(request.getName());
+        question.setChoiceType(ChoiceType.fromDisplayName(request.getChoiceType()));
+        question.setChoices(choices);
+        question.setRequired(request.isRequired());
+
+        Question saved = questionRepository.save(question);
+
+        return AddQuestionResponse.builder()
+                .message("Add question success")
+                .question(toQuestionDto(saved))
                 .build();
     }
 

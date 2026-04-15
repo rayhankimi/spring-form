@@ -26,8 +26,9 @@ public class GlobalExceptionHandler {
         Map<String, List<String>> errors = new HashMap<>();
 
         for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
+            String fieldName = toSnakeCase(fieldError.getField());
             errors
-                .computeIfAbsent(fieldError.getField(), k -> new ArrayList<>())
+                .computeIfAbsent(fieldName, k -> new ArrayList<>())
                 .add(fieldError.getDefaultMessage());
         }
 
@@ -42,6 +43,12 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public MessageResponse handleBadCredentials(BadCredentialsException ex) {
         return new MessageResponse("Email or password incorrect");
+    }
+
+    // Converts camelCase field names to snake_case for consistent JSON error keys
+    // e.g. choiceType → choice_type, allowedDomains → allowed_domains
+    private String toSnakeCase(String camelCase) {
+        return camelCase.replaceAll("([A-Z])", "_$1").toLowerCase();
     }
 
     // Form slug not found → 404

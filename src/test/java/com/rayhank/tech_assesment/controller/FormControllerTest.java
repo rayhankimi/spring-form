@@ -31,6 +31,7 @@ import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.hamcrest.Matchers.nullValue;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -494,6 +495,7 @@ class FormControllerTest {
 
         @Test
         @DisplayName("200 — questions array contains correct fields including choice_type and is_required")
+
         @Transactional
         void withQuestions_shouldReturnQuestionsWithAllFields() throws Exception {
             User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
@@ -589,6 +591,432 @@ class FormControllerTest {
                             .header("Authorization", "Bearer " + user1Token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.form.questions", hasSize(3)));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /api/v1/forms/{slug}/questions
+    // -------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("POST /api/v1/forms/{slug}/questions")
+    class AddQuestion {
+
+        private Form seedForm(User owner, String slug) {
+            Form form = new Form();
+            form.setName("Form " + slug);
+            form.setSlug(slug);
+            form.setLimitOneResponse(false);
+            form.setCreator(owner);
+            return formRepository.save(form);
+        }
+
+        // --- 200 Success ---
+
+        @Test
+        @DisplayName("200 — multiple choice with choices returns comma-joined choices in response")
+        @Transactional
+        void multipleChoice_withChoices_shouldReturn200() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-mc");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Favorite Framework",
+                    "choice_type", "multiple choice",
+                    "choices", List.of("React", "Vue", "Angular"),
+                    "is_required", true
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("Add question success"))
+                    .andExpect(jsonPath("$.question.id").isNumber())
+                    .andExpect(jsonPath("$.question.name").value("Favorite Framework"))
+                    .andExpect(jsonPath("$.question.choice_type").value("multiple choice"))
+                    .andExpect(jsonPath("$.question.choices").value("React,Vue,Angular"))
+                    .andExpect(jsonPath("$.question.is_required").value(true))
+                    .andExpect(jsonPath("$.question.form_id").isNumber());
+        }
+
+        @Test
+        @DisplayName("200 — short answer without choices returns null choices in response")
+        @Transactional
+        void shortAnswer_noChoices_shouldReturn200() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-sa");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Your full name",
+                    "choice_type", "short answer",
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.message").value("Add question success"))
+                    .andExpect(jsonPath("$.question.choice_type").value("short answer"))
+                    .andExpect(jsonPath("$.question.choices", nullValue()))
+                    .andExpect(jsonPath("$.question.is_required").value(false));
+        }
+
+        @Test
+        @DisplayName("200 — paragraph type without choices is accepted")
+        @Transactional
+        void paragraph_noChoices_shouldReturn200() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-para");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Tell us about yourself",
+                    "choice_type", "paragraph",
+                    "is_required", true
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.question.choice_type").value("paragraph"));
+        }
+
+        @Test
+        @DisplayName("200 — date type without choices is accepted")
+        @Transactional
+        void date_noChoices_shouldReturn200() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-date");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Date of birth",
+                    "choice_type", "date",
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.question.choice_type").value("date"));
+        }
+
+        @Test
+        @DisplayName("200 — dropdown with choices is accepted")
+        @Transactional
+        void dropdown_withChoices_shouldReturn200() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-dd");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Select country",
+                    "choice_type", "dropdown",
+                    "choices", List.of("Indonesia", "Malaysia", "Singapore"),
+                    "is_required", true
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.question.choice_type").value("dropdown"))
+                    .andExpect(jsonPath("$.question.choices").value("Indonesia,Malaysia,Singapore"));
+        }
+
+        @Test
+        @DisplayName("200 — checkboxes with choices is accepted")
+        @Transactional
+        void checkboxes_withChoices_shouldReturn200() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-cb");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Select skills",
+                    "choice_type", "checkboxes",
+                    "choices", List.of("Java", "Python", "Go"),
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.question.choice_type").value("checkboxes"))
+                    .andExpect(jsonPath("$.question.choices").value("Java,Python,Go"));
+        }
+
+        @Test
+        @DisplayName("200 — response question.form_id matches the target form's id")
+        @Transactional
+        void response_formId_shouldMatchTargetForm() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-fid");
+            Form form = seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Question",
+                    "choice_type", "short answer",
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.question.form_id").value(form.getId().intValue()));
+        }
+
+        // --- 422 Validation ---
+
+        @Test
+        @DisplayName("422 — missing name returns error on name field")
+        @Transactional
+        void missingName_shouldReturn422() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-noname");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "choice_type", "short answer",
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.message").value("Invalid field"))
+                    .andExpect(jsonPath("$.errors.name").isArray())
+                    .andExpect(jsonPath("$.errors.name[0]").value("The name field is required."));
+        }
+
+        @Test
+        @DisplayName("422 — missing choice_type returns error on choice_type field")
+        @Transactional
+        void missingChoiceType_shouldReturn422() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-noct");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Question",
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.message").value("Invalid field"))
+                    .andExpect(jsonPath("$.errors.choice_type").isArray())
+                    .andExpect(jsonPath("$.errors.choice_type[0]").value("The choice type field is required."));
+        }
+
+        @Test
+        @DisplayName("422 — invalid choice_type value returns error on choice_type field")
+        @Transactional
+        void invalidChoiceType_shouldReturn422() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-badct");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Question",
+                    "choice_type", "text box",
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.message").value("Invalid field"))
+                    .andExpect(jsonPath("$.errors.choice_type").isArray());
+        }
+
+        @Test
+        @DisplayName("422 — multiple choice without choices returns error on choices field")
+        @Transactional
+        void multipleChoice_withoutChoices_shouldReturn422() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-mc-noc");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Pick one",
+                    "choice_type", "multiple choice",
+                    "is_required", true
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.message").value("Invalid field"))
+                    .andExpect(jsonPath("$.errors.choices").isArray())
+                    .andExpect(jsonPath("$.errors.choices[0]").value("The choices field is required."));
+        }
+
+        @Test
+        @DisplayName("422 — dropdown without choices returns error on choices field")
+        @Transactional
+        void dropdown_withoutChoices_shouldReturn422() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-dd-noc");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Select one",
+                    "choice_type", "dropdown",
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.errors.choices").isArray())
+                    .andExpect(jsonPath("$.errors.choices[0]").value("The choices field is required."));
+        }
+
+        @Test
+        @DisplayName("422 — checkboxes without choices returns error on choices field")
+        @Transactional
+        void checkboxes_withoutChoices_shouldReturn422() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-cb-noc");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Select all that apply",
+                    "choice_type", "checkboxes",
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.errors.choices").isArray())
+                    .andExpect(jsonPath("$.errors.choices[0]").value("The choices field is required."));
+        }
+
+        @Test
+        @DisplayName("422 — both name and choice_type missing returns errors for both fields")
+        @Transactional
+        void allRequiredFieldsMissing_shouldReturn422WithAllErrors() throws Exception {
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-all-miss");
+            seedForm(user1, slug);
+
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{}"))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.errors.name").isArray())
+                    .andExpect(jsonPath("$.errors.choice_type").isArray());
+        }
+
+        // --- 404 Form Not Found ---
+
+        @Test
+        @DisplayName("404 — unknown form slug returns 'Form not found'")
+        void unknownFormSlug_shouldReturn404() throws Exception {
+            var body = Map.of(
+                    "name", "Question",
+                    "choice_type", "short answer",
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/slug-does-not-exist/questions")
+                            .header("Authorization", "Bearer " + user1Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.message").value("Form not found"));
+        }
+
+        // --- 403 Forbidden ---
+
+        @Test
+        @DisplayName("403 — user adding question to another user's form returns 'Forbidden access'")
+        @Transactional
+        void anotherUserForm_shouldReturn403() throws Exception {
+            // user1 creates a form
+            User user1 = userRepository.findByEmail("user1@webtech.id").orElseThrow();
+            String slug = uniqueSlug("aq-forbidden");
+            seedForm(user1, slug);
+
+            var body = Map.of(
+                    "name", "Question",
+                    "choice_type", "short answer",
+                    "is_required", false
+            );
+
+            // user2 tries to add a question to user1's form
+            mockMvc.perform(post(FORMS_URL + "/" + slug + "/questions")
+                            .header("Authorization", "Bearer " + user2Token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.message").value("Forbidden access"));
+        }
+
+        // --- 401 Unauthenticated ---
+
+        @Test
+        @DisplayName("401 — request without token returns 'Unauthenticated.'")
+        void noToken_shouldReturn401() throws Exception {
+            var body = Map.of(
+                    "name", "Question",
+                    "choice_type", "short answer",
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/any-slug/questions")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.message").value("Unauthenticated."));
+        }
+
+        @Test
+        @DisplayName("401 — request with invalid token returns 'Unauthenticated.'")
+        void invalidToken_shouldReturn401() throws Exception {
+            var body = Map.of(
+                    "name", "Question",
+                    "choice_type", "short answer",
+                    "is_required", false
+            );
+
+            mockMvc.perform(post(FORMS_URL + "/any-slug/questions")
+                            .header("Authorization", "Bearer invalid.token.here")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.message").value("Unauthenticated."));
         }
     }
 }

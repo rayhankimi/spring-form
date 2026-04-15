@@ -5,6 +5,7 @@ import com.rayhank.tech_assesment.entity.*;
 import com.rayhank.tech_assesment.exception.ForbiddenAccessException;
 import com.rayhank.tech_assesment.exception.FormNotFoundException;
 import com.rayhank.tech_assesment.repository.FormRepository;
+import com.rayhank.tech_assesment.repository.QuestionRepository;
 import com.rayhank.tech_assesment.repository.UserRepository;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +29,7 @@ class FormServiceTest {
 
     @Mock private FormRepository formRepository;
     @Mock private UserRepository userRepository;
+    @Mock private QuestionRepository questionRepository;
 
     @InjectMocks private FormService formService;
 

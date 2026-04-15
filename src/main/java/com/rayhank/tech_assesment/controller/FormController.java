@@ -34,4 +34,12 @@ public class FormController {
     public ResponseEntity<GetFormDetailResponse> getFormBySlug(@PathVariable String slug) {
         return ResponseEntity.ok(formService.getFormBySlug(slug));
     }
+
+    @PostMapping("/{slug}/questions")
+    @Operation(summary = "Add a question to a form owned by the authenticated user")
+    public ResponseEntity<AddQuestionResponse> addQuestion(
+            @PathVariable String slug,
+            @Valid @RequestBody AddQuestionRequest request) {
+        return ResponseEntity.ok(formService.addQuestion(slug, request));
+    }
 }

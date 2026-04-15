@@ -16,4 +16,15 @@ public enum ChoiceType {
     public String toJsonValue() {
         return name().toLowerCase().replace('_', ' ');
     }
+
+    // Deserializes from display name, e.g. "multiple choice" → MULTIPLE_CHOICE
+    public static ChoiceType fromDisplayName(String displayName) {
+        if (displayName == null) return null;
+        for (ChoiceType type : values()) {
+            if (type.toJsonValue().equalsIgnoreCase(displayName.trim())) {
+                return type;
+            }
+        }
+        return null;
+    }
 }
